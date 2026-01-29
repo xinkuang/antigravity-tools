@@ -5,6 +5,7 @@ use super::models::*;
 use bytes::Bytes;
 use futures::StreamExt;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::io;
 
 /// Collects an OpenAI SSE stream into a complete OpenAIResponse
@@ -28,7 +29,7 @@ where
     let mut content_parts: Vec<String> = Vec::new();
     let mut reasoning_parts: Vec<String> = Vec::new();
     let mut finish_reason: Option<String> = None;
-    let mut tool_calls: Vec<Value> = Vec::new(); // Store as Value to be flexible with partials
+    let mut tool_calls_map: HashMap<u64, Value> = HashMap::new();
 
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result.map_err(|e| format!("Stream error: {}", e))?;
@@ -80,8 +81,42 @@ where
                                     reasoning_parts.push(rc.to_string());
                                 }
 
-                                // Tool Calls Logic would go here (simplified for now as usually not mixed with non-stream heavy)
-                                // But proper implementation needs to aggregate tool calls by index.
+                                // Tool Calls Aggregation
+                                if let Some(tcs) = delta.get("tool_calls").and_then(|v| v.as_array()) {
+                                    for tc in tcs {
+                                        if let Some(index) = tc.get("index").and_then(|v| v.as_u64()) {
+                                            let entry = tool_calls_map.entry(index).or_insert_with(|| json!({
+                                                "index": index,
+                                                "id": "",
+                                                "type": "function",
+                                                "function": {
+                                                    "name": "",
+                                                    "arguments": ""
+                                                }
+                                            }));
+
+                                            if let Some(id) = tc.get("id").and_then(|v| v.as_str()) {
+                                                entry["id"] = Value::String(id.to_string());
+                                            }
+                                            if let Some(t) = tc.get("type").and_then(|v| v.as_str()) {
+                                                entry["type"] = Value::String(t.to_string());
+                                            }
+                                            
+                                            if let Some(func) = tc.get("function") {
+                                                if let Some(name) = func.get("name").and_then(|v| v.as_str()) {
+                                                    if let Some(current_name) = entry["function"]["name"].as_str() {
+                                                        entry["function"]["name"] = Value::String(format!("{}{}", current_name, name));
+                                                    }
+                                                }
+                                                if let Some(args) = func.get("arguments").and_then(|v| v.as_str()) {
+                                                    if let Some(current_args) = entry["function"]["arguments"].as_str() {
+                                                        entry["function"]["arguments"] = Value::String(format!("{}{}", current_args, args));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
 
                             if let Some(fr) = choice.get("finish_reason").and_then(|v| v.as_str()) {
@@ -102,11 +137,23 @@ where
         Some(reasoning_parts.join(""))
     };
 
+    // Convert aggregated tool calls map to sorted vector
+    let mut tool_calls: Option<Vec<Value>> = None;
+    if !tool_calls_map.is_empty() {
+        let mut tcs: Vec<Value> = tool_calls_map.into_values().collect();
+        tcs.sort_by(|a, b| {
+            let idx_a = a.get("index").and_then(|v| v.as_u64()).unwrap_or(0);
+            let idx_b = b.get("index").and_then(|v| v.as_u64()).unwrap_or(0);
+            idx_a.cmp(&idx_b)
+        });
+        tool_calls = Some(tcs);
+    }
+
     let message = OpenAIMessage {
         role: role.unwrap_or("assistant".to_string()),
         content: Some(OpenAIContent::String(full_content)),
         reasoning_content: full_reasoning,
-        tool_calls: None, // TODO: Implement tool call aggregation if needed
+        tool_calls,
         tool_call_id: None,
         name: None,
     };

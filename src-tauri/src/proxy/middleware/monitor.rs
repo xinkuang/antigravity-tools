@@ -151,6 +151,7 @@ pub async fn monitor_middleware(
                 let mut thinking_content = String::new();
                 let mut response_content = String::new();
                 let mut thinking_signature = String::new();
+                let mut all_tool_calls = Vec::new();
                 
                 for line in full_response.lines() {
                     if !line.starts_with("data: ") {
@@ -173,6 +174,13 @@ pub async fn monitor_middleware(
                                     // Main response content
                                     if let Some(content) = delta.get("content").and_then(|v| v.as_str()) {
                                         response_content.push_str(content);
+                                    }
+                                    // Tool calls
+                                    // Since streaming.rs emits complete tool calls in one go, we can simply collect them
+                                    if let Some(tool_calls) = delta.get("tool_calls").and_then(|v| v.as_array()) {
+                                        for tc in tool_calls {
+                                            all_tool_calls.push(tc.clone());
+                                        }
                                     }
                                 }
                             }
@@ -231,6 +239,9 @@ pub async fn monitor_middleware(
                 }
                 if !response_content.is_empty() {
                     consolidated.insert("content".to_string(), Value::String(response_content));
+                }
+                if !all_tool_calls.is_empty() {
+                    consolidated.insert("tool_calls".to_string(), Value::Array(all_tool_calls));
                 }
                 if let Some(input) = log.input_tokens {
                     consolidated.insert("input_tokens".to_string(), Value::Number(input.into()));
