@@ -85,9 +85,18 @@ jobs:
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
+        if: vars.ENABLE_DOCKER_PUSH == 'true' || github.repository == 'lbjlaq/Antigravity-Manager'
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+        continue-on-error: true
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push (AMD64)
         uses: docker/build-push-action@v6
@@ -97,8 +106,10 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ${{ github.repository_owner }}/antigravity-manager:latest-amd64
-            ${{ github.repository_owner }}/antigravity-manager:${{ github.ref_name }}-amd64
+            ${{ secrets.DOCKERHUB_USERNAME || github.repository_owner }}/antigravity-manager:latest-amd64
+            ${{ secrets.DOCKERHUB_USERNAME || github.repository_owner }}/antigravity-manager:${{ github.ref_name }}-amd64
+            ghcr.io/${{ github.repository_owner }}/antigravity-manager:latest-amd64
+            ghcr.io/${{ github.repository_owner }}/antigravity-manager:${{ github.ref_name }}-amd64
           build-args: |
             USE_MIRROR=false
 
@@ -114,9 +125,18 @@ jobs:
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
+        if: vars.ENABLE_DOCKER_PUSH == 'true' || github.repository == 'lbjlaq/Antigravity-Manager'
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+        continue-on-error: true
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push (ARM64)
         uses: docker/build-push-action@v6
@@ -126,8 +146,10 @@ jobs:
           platforms: linux/arm64
           push: true
           tags: |
-            ${{ github.repository_owner }}/antigravity-manager:latest-arm64
-            ${{ github.repository_owner }}/antigravity-manager:${{ github.ref_name }}-arm64
+            ${{ secrets.DOCKERHUB_USERNAME || github.repository_owner }}/antigravity-manager:latest-arm64
+            ${{ secrets.DOCKERHUB_USERNAME || github.repository_owner }}/antigravity-manager:${{ github.ref_name }}-arm64
+            ghcr.io/${{ github.repository_owner }}/antigravity-manager:latest-arm64
+            ghcr.io/${{ github.repository_owner }}/antigravity-manager:${{ github.ref_name }}-arm64
           build-args: |
             USE_MIRROR=false
 
@@ -138,16 +160,35 @@ jobs:
     steps:
       - name: Login to Docker Hub
         uses: docker/login-action@v3
+        if: vars.ENABLE_DOCKER_PUSH == 'true' || github.repository == 'lbjlaq/Antigravity-Manager'
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+        continue-on-error: true
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create and push manifest
         run: |
-          docker buildx imagetools create -t ${{ github.repository_owner }}/antigravity-manager:latest \
-            ${{ github.repository_owner }}/antigravity-manager:latest-amd64 \
-            ${{ github.repository_owner }}/antigravity-manager:latest-arm64
+          # Try pushing Docker Hub manifest (ignore failure if not logged in)
+          docker buildx imagetools create -t ${{ secrets.DOCKERHUB_USERNAME || github.repository_owner }}/antigravity-manager:latest \
+            ${{ secrets.DOCKERHUB_USERNAME || github.repository_owner }}/antigravity-manager:latest-amd64 \
+            ${{ secrets.DOCKERHUB_USERNAME || github.repository_owner }}/antigravity-manager:latest-arm64 || true
 
-          docker buildx imagetools create -t ${{ github.repository_owner }}/antigravity-manager:${{ github.ref_name }} \
-            ${{ github.repository_owner }}/antigravity-manager:${{ github.ref_name }}-amd64 \
-            ${{ github.repository_owner }}/antigravity-manager:${{ github.ref_name }}-arm64
+          docker buildx imagetools create -t ${{ secrets.DOCKERHUB_USERNAME || github.repository_owner }}/antigravity-manager:${{ github.ref_name }} \
+            ${{ secrets.DOCKERHUB_USERNAME || github.repository_owner }}/antigravity-manager:${{ github.ref_name }}-amd64 \
+            ${{ secrets.DOCKERHUB_USERNAME || github.repository_owner }}/antigravity-manager:${{ github.ref_name }}-arm64 || true
+
+          # Push GHCR manifest (Main target)
+          docker buildx imagetools create -t ghcr.io/${{ github.repository_owner }}/antigravity-manager:latest \
+            ghcr.io/${{ github.repository_owner }}/antigravity-manager:latest-amd64 \
+            ghcr.io/${{ github.repository_owner }}/antigravity-manager:latest-arm64
+
+          docker buildx imagetools create -t ghcr.io/${{ github.repository_owner }}/antigravity-manager:${{ github.ref_name }} \
+            ghcr.io/${{ github.repository_owner }}/antigravity-manager:${{ github.ref_name }}-amd64 \
+            ghcr.io/${{ github.repository_owner }}/antigravity-manager:${{ github.ref_name }}-arm64
