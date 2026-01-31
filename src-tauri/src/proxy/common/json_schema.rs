@@ -223,25 +223,10 @@ fn clean_json_schema_recursive(value: &mut Value, is_schema_node: bool, depth: u
             // 1. [CRITICAL] 深度递归处理子项
             // 处理 properties (对象)
             if let Some(Value::Object(props)) = map.get_mut("properties") {
-                let mut nullable_keys = std::collections::HashSet::new();
-                for (k, v) in props {
-                    // properties 的每一个值都必须是一个独立的 Schema 节点
-                    if clean_json_schema_recursive(v, true, depth + 1) {
-                        nullable_keys.insert(k.clone());
-                    }
-                }
-
-                if !nullable_keys.is_empty() {
-                    if let Some(Value::Array(req_arr)) = map.get_mut("required") {
-                        req_arr.retain(|r| {
-                            r.as_str()
-                                .map(|s| !nullable_keys.contains(s))
-                                .unwrap_or(true)
-                        });
-                        if req_arr.is_empty() {
-                            map.remove("required");
-                        }
-                    }
+                // [FIX] 即使字段是 nullable 的，也不应将其从 required 中移除
+                // 仅递归清洗子节点，不再收集 nullable_keys
+                for v in props.values_mut() {
+                    clean_json_schema_recursive(v, true, depth + 1);
                 }
 
                 // [NEW] 隐式类型注入：如果有 properties 但没 type，补全为 object
