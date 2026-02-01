@@ -245,6 +245,16 @@ pub fn run() {
         .manage(commands::proxy::ProxyServiceState::new())
         .manage(commands::cloudflared::CloudflaredState::new())
         .setup(|app| {
+            // [NEW] Print Version Info on Startup
+            let git_hash = env!("APP_GIT_HASH");
+            let commit_date = env!("APP_COMMIT_DATE");
+            info!("--------------------------------------------------");
+            info!("🚀 Antigravity Tools Starting...");
+            info!("📦 Version: {}", app.package_info().version);
+            info!("🔗 Git Hash: {}", git_hash);
+            info!("📅 Commit Date: {}", commit_date);
+            info!("--------------------------------------------------");
+
             info!("Setup starting...");
 
             // Initialize log bridge with app handle for debug console
