@@ -72,6 +72,17 @@ pub fn run() {
     }
 
     if is_headless {
+        // [NEW] Print Version Info in Headless Mode
+        let git_hash = env!("APP_GIT_HASH");
+        let commit_date = env!("APP_COMMIT_DATE");
+        let version = env!("CARGO_PKG_VERSION");
+        info!("--------------------------------------------------");
+        info!("🚀 Antigravity Tools Starting (HEADLESS)...");
+        info!("📦 Version: {}", version);
+        info!("🔗 Git Hash: {}", git_hash);
+        info!("📅 Commit Date: {}", commit_date);
+        info!("--------------------------------------------------");
+
         info!("Starting in HEADLESS mode...");
 
         let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
