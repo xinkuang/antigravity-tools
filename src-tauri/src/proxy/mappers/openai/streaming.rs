@@ -74,7 +74,8 @@ pub fn create_openai_sse_stream(
     let created_ts = Utc::now().timestamp();
 
     let stream = async_stream::stream! {
-        let mut emitted_tool_calls = std::collections::HashSet::new();
+        let mut tool_call_index_counter = 0u32;
+        let mut emitted_any_tool_call = false;
         let mut final_usage: Option<super::models::OpenAIUsage> = None;
         let mut error_occurred = false;
 
@@ -125,61 +126,60 @@ pub fn create_openai_sse_stream(
                                                                 }
                                                             }
                                                             if let Some(func_call) = part.get("functionCall") {
-                                                                let call_key = serde_json::to_string(func_call).unwrap_or_default();
-                                                                if !emitted_tool_calls.contains(&call_key) {
-                                                                    emitted_tool_calls.insert(call_key);
-                                                                    let name = func_call.get("name").and_then(|v| v.as_str()).unwrap_or("unknown");
-                                                                    let mut args = func_call.get("args").unwrap_or(&json!({})).clone();
-                                                                    
-                                                                    // [FIX #1575] 标准化 shell 工具参数名称
-                                                                    // Gemini 可能使用 cmd/code/script 等替代参数名，统一为 command
-                                                                    if name == "shell" || name == "bash" || name == "local_shell" {
-                                                                        if let Some(obj) = args.as_object_mut() {
-                                                                            if !obj.contains_key("command") {
-                                                                                for alt_key in &["cmd", "code", "script", "shell_command"] {
-                                                                                    if let Some(val) = obj.remove(*alt_key) {
-                                                                                        obj.insert("command".to_string(), val);
-                                                                                        debug!("[OpenAI-Stream] Normalized shell arg '{}' -> 'command'", alt_key);
-                                                                                        break;
-                                                                                    }
+                                                                let name = func_call.get("name").and_then(|v| v.as_str()).unwrap_or("unknown");
+                                                                let mut args = func_call.get("args").unwrap_or(&json!({})).clone();
+                                                                
+                                                                // [FIX #1575] 标准化 shell 工具参数名称
+                                                                // Gemini 可能使用 cmd/code/script 等替代参数名，统一为 command
+                                                                if name == "shell" || name == "bash" || name == "local_shell" {
+                                                                    if let Some(obj) = args.as_object_mut() {
+                                                                        if !obj.contains_key("command") {
+                                                                            for alt_key in &["cmd", "code", "script", "shell_command"] {
+                                                                                if let Some(val) = obj.remove(*alt_key) {
+                                                                                    obj.insert("command".to_string(), val);
+                                                                                    debug!("[OpenAI-Stream] Normalized shell arg '{}' -> 'command'", alt_key);
+                                                                                    break;
                                                                                 }
                                                                             }
                                                                         }
                                                                     }
-                                                                    
-                                                                    let args_str = serde_json::to_string(&args).unwrap_or_default();
-                                                                    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-                                                                    use std::hash::{Hash, Hasher};
-                                                                    serde_json::to_string(func_call).unwrap_or_default().hash(&mut hasher);
-                                                                    let call_id = format!("call_{:x}", hasher.finish());
-
-                                                                    let tool_call_chunk = json!({
-                                                                        "id": &stream_id,
-                                                                        "object": "chat.completion.chunk",
-                                                                        "created": created_ts,
-                                                                        "model": &model,
-                                                                        "choices": [{
-                                                                            "index": idx as u32,
-                                                                            "delta": {
-                                                                                "role": "assistant",
-                                                                                "tool_calls": [{
-                                                                                    "index": 0,
-                                                                                    "id": call_id,
-                                                                                    "type": "function",
-                                                                                    "function": { "name": name, "arguments": args_str }
-                                                                                }]
-                                                                            },
-                                                                            "finish_reason": serde_json::Value::Null
-                                                                        }]
-                                                                    });
-                                                                    let sse_out = format!("data: {}\n\n", serde_json::to_string(&tool_call_chunk).unwrap_or_default());
-                                                                    yield Ok::<Bytes, String>(Bytes::from(sse_out));
                                                                 }
-                                                            }
-                                                        }
-                                                    }
+                                                                
+                                                                let args_str = serde_json::to_string(&args).unwrap_or_default();
+                                                                let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                                                                use std::hash::{Hash, Hasher};
+                                                                serde_json::to_string(func_call).unwrap_or_default().hash(&mut hasher);
+                                                                let call_id = format!("call_{:x}", hasher.finish());
 
-                                                    if let Some(grounding) = candidate.get("groundingMetadata") {
+                                                                // [FIX] Parallel Tool Support
+                                                                let current_tool_index = tool_call_index_counter;
+                                                                tool_call_index_counter += 1;
+                                                                emitted_any_tool_call = true;
+
+                                                                let tool_call_chunk = json!({
+                                                                    "id": &stream_id,
+                                                                    "object": "chat.completion.chunk",
+                                                                    "created": created_ts,
+                                                                    "model": &model,
+                                                                    "choices": [{
+                                                                        "index": idx as u32,
+                                                                        "delta": {
+                                                                            "role": "assistant",
+                                                                            "tool_calls": [{
+                                                                                "index": current_tool_index,
+                                                                                "id": call_id,
+                                                                                "type": "function",
+                                                                                "function": { "name": name, "arguments": args_str }
+                                                                            }]
+                                                                        },
+                                                                        "finish_reason": serde_json::Value::Null
+                                                                    }]
+                                                                });
+                                                                let sse_out = format!("data: {}\n\n", serde_json::to_string(&tool_call_chunk).unwrap_or_default());
+                                                                yield Ok::<Bytes, String>(Bytes::from(sse_out));
+                                                            }
+
+                                                            if let Some(grounding) = candidate.get("groundingMetadata") {
                                                         let mut grounding_text = String::new();
                                                         if let Some(queries) = grounding.get("webSearchQueries").and_then(|q| q.as_array()) {
                                                             let query_list: Vec<&str> = queries.iter().filter_map(|v| v.as_str()).collect();
