@@ -180,30 +180,31 @@ pub fn create_openai_sse_stream(
                                                             }
 
                                                             if let Some(grounding) = candidate.get("groundingMetadata") {
-                                                        let mut grounding_text = String::new();
-                                                        if let Some(queries) = grounding.get("webSearchQueries").and_then(|q| q.as_array()) {
-                                                            let query_list: Vec<&str> = queries.iter().filter_map(|v| v.as_str()).collect();
-                                                            if !query_list.is_empty() {
-                                                                grounding_text.push_str("\n\n---\n**🔍 已为您搜索：** ");
-                                                                grounding_text.push_str(&query_list.join(", "));
-                                                            }
-                                                        }
-                                                        if let Some(chunks) = grounding.get("groundingChunks").and_then(|c| c.as_array()) {
-                                                            let mut links = Vec::new();
-                                                            for (i, chunk) in chunks.iter().enumerate() {
-                                                                if let Some(web) = chunk.get("web") {
-                                                                    let title = web.get("title").and_then(|v| v.as_str()).unwrap_or("网页来源");
-                                                                    let uri = web.get("uri").and_then(|v| v.as_str()).unwrap_or("#");
-                                                                    links.push(format!("[{}] [{}]({})", i + 1, title, uri));
+                                                                let mut grounding_text = String::new();
+                                                                if let Some(queries) = grounding.get("webSearchQueries").and_then(|q| q.as_array()) {
+                                                                    let query_list: Vec<&str> = queries.iter().filter_map(|v| v.as_str()).collect();
+                                                                    if !query_list.is_empty() {
+                                                                        grounding_text.push_str("\n\n---\n**🔍 已为您搜索：** ");
+                                                                        grounding_text.push_str(&query_list.join(", "));
+                                                                    }
                                                                 }
+                                                                if let Some(chunks) = grounding.get("groundingChunks").and_then(|c| c.as_array()) {
+                                                                    let mut links = Vec::new();
+                                                                    for (i, chunk) in chunks.iter().enumerate() {
+                                                                        if let Some(web) = chunk.get("web") {
+                                                                            let title = web.get("title").and_then(|v| v.as_str()).unwrap_or("网页来源");
+                                                                            let uri = web.get("uri").and_then(|v| v.as_str()).unwrap_or("#");
+                                                                            links.push(format!("[{}] [{}]({})", i + 1, title, uri));
+                                                                        }
+                                                                    }
+                                                                    if !links.is_empty() {
+                                                                        grounding_text.push_str("\n\n**🌐 来源引文：**\n");
+                                                                        grounding_text.push_str(&links.join("\n"));
+                                                                    }
+                                                                }
+                                                                if !grounding_text.is_empty() { content_out.push_str(&grounding_text); }
                                                             }
-                                                            if !links.is_empty() {
-                                                                grounding_text.push_str("\n\n**🌐 来源引文：**\n");
-                                                                grounding_text.push_str(&links.join("\n"));
-                                                            }
-                                                        }
-                                                        if !grounding_text.is_empty() { content_out.push_str(&grounding_text); }
-                                                    }
+
 
                                                     let gemini_finish_reason = candidate.get("finishReason").and_then(|f| f.as_str()).map(|f| match f {
                                                         "STOP" => "stop",
