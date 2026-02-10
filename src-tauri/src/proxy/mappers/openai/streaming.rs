@@ -204,7 +204,8 @@ pub fn create_openai_sse_stream(
                                                                 }
                                                                 if !grounding_text.is_empty() { content_out.push_str(&grounding_text); }
                                                             }
-
+                                                        }
+                                                    }
 
                                                     let gemini_finish_reason = candidate.get("finishReason").and_then(|f| f.as_str()).map(|f| match f {
                                                         "STOP" => "stop",
