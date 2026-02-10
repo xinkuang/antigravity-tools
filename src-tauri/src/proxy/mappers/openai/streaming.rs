@@ -218,7 +218,7 @@ pub fn create_openai_sse_stream(
 
                                                     // [FIX #1575] 如果发射了工具调用，强制设置为 tool_calls
                                                     // 解决 Gemini 返回 STOP 但有工具调用时，OpenAI 客户端认为对话已结束的问题
-                                                    let finish_reason = if !emitted_tool_calls.is_empty() && gemini_finish_reason.is_some() {
+                                                    let finish_reason = if emitted_any_tool_call && gemini_finish_reason.is_some() {
                                                         Some("tool_calls")
                                                     } else {
                                                         gemini_finish_reason
